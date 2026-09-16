@@ -11,8 +11,8 @@ import { parseNamecheapProxy } from '../../shared/namecheap-proxy';
 import { sanitizeBundleDiagnostics } from './sanitize-diagnostics';
 
 // A portable copy of everything DomBot stores — registrar keys, portfolio
-// cache, folders, manual prices, settings, MCP pairings, bulk-job history —
-// as one JSON document. It's the backup story for a self-hosted instance
+// cache, folders, manual prices, TLD rates, settings, MCP pairings, bulk-job
+// history — as one JSON document. It's the backup story for a self-hosted instance
 // (whose data is unreadable without its root secret), the way to move from
 // the desktop app to a web instance without re-entering keys, and what the
 // secret-rotation script round-trips through.
