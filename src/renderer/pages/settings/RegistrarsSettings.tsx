@@ -551,9 +551,7 @@ function RegistrarCard({
               onChange={(name, value) =>
                 setValues((current) => ({ ...current, [name]: value }))
               }
-              hideFields={
-                proxySuppliesIp ? new Set(['clientIp']) : undefined
-              }
+              hideFields={proxySuppliesIp ? new Set(['clientIp']) : undefined}
             />
 
             {provider.name === 'namecheap' && (
@@ -576,8 +574,8 @@ function RegistrarCard({
                         Proxy URL
                       </FieldLabel>
                       <FieldDescription>
-                        HTTP CONNECT proxy with a public IPv4 endpoint. Include
-                        username and password if required.
+                        CONNECT proxy with a public IPv4 endpoint. HTTPS is
+                        required when using a username and password.
                       </FieldDescription>
                       <Input
                         id={`${provider.name}-proxy-url`}
@@ -585,7 +583,7 @@ function RegistrarCard({
                         autoComplete="off"
                         spellCheck={false}
                         className="font-mono"
-                        placeholder="http://user:password@proxy-ip:port"
+                        placeholder="https://user:password@proxy-ip:port"
                         value={values.proxyUrl ?? ''}
                         disabled={busy}
                         onChange={(e) =>
@@ -616,8 +614,8 @@ function RegistrarCard({
                     </Field>
                     {isWeb() && (
                       <p className="text-sm text-muted-foreground">
-                        Workers proxy connections use an experimental TLS client.
-                        Review the{' '}
+                        Workers proxy connections use an experimental TLS
+                        client. Review the{' '}
                         <a
                           className="underline"
                           href="https://github.com/latentharbor/tunnelfetch#readme"
@@ -935,8 +933,8 @@ function NewRegistrarAccountForm({
                     Proxy URL
                   </FieldLabel>
                   <FieldDescription>
-                    HTTP CONNECT proxy with a public IPv4 endpoint. Include
-                    username and password if required.
+                    CONNECT proxy with a public IPv4 endpoint. HTTPS is required
+                    when using a username and password.
                   </FieldDescription>
                   <Input
                     id={`${provider.name}-new-proxy-url`}
@@ -944,7 +942,7 @@ function NewRegistrarAccountForm({
                     autoComplete="off"
                     spellCheck={false}
                     className="font-mono"
-                    placeholder="http://user:password@proxy-ip:port"
+                    placeholder="https://user:password@proxy-ip:port"
                     value={values.proxyUrl ?? ''}
                     disabled={saving}
                     onChange={(e) =>

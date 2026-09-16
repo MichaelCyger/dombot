@@ -49,16 +49,16 @@ export function parseNamecheapProxy(
   try {
     url = new URL(raw);
   } catch {
-    throw new Error('Enter a valid HTTP proxy URL.');
+    throw new Error('Enter a valid HTTP or HTTPS proxy URL.');
   }
   if (
-    url.protocol !== 'http:' ||
+    !['http:', 'https:'].includes(url.protocol) ||
     url.pathname !== '/' ||
     url.search ||
     url.hash
   ) {
     throw new Error(
-      'Use an HTTP CONNECT proxy URL without a path, query or fragment.',
+      'Use an HTTP or HTTPS CONNECT proxy URL without a path, query or fragment.',
     );
   }
   if (!isPublicIpv4(url.hostname))
@@ -67,6 +67,9 @@ export function parseNamecheapProxy(
     throw new Error('The outgoing IP must be a public IPv4 address.');
   if (url.port === '0')
     throw new Error('The proxy port must be between 1 and 65535.');
+  // CONNECT protects registrar traffic, but only TLS to the proxy protects its password.
+  if (url.protocol === 'http:' && (url.username || url.password))
+    throw new Error('Proxy authentication requires an HTTPS proxy URL.');
   try {
     const user = decodeURIComponent(url.username),
       password = decodeURIComponent(url.password);
