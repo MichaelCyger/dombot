@@ -1,3 +1,4 @@
+import { protectRegistrar, redactRegistrarMessage } from './registrar-errors';
 import {
   RegistrarClient,
   createRegistrar,
@@ -200,15 +201,19 @@ export function getRegistrarClient(
       ? parseNamecheapProxy(getStoredCredentials(account.id))
       : null;
   const fingerprint =
-    JSON.stringify(credentials) + (proxy ? `|proxy:${proxy.url}|${proxy.ip}` : '');
+    JSON.stringify(credentials) +
+    (proxy ? `|proxy:${proxy.url}|${proxy.ip}` : '');
   if (clientCredentials.get(account.id) !== fingerprint)
     invalidateAccount(account.id);
   let client = clients.get(account.id);
   if (!client) {
     client = new RegistrarClient(
-      proxy
-        ? createProxiedNamecheap(credentials, proxy)
-        : createRegistrar(name, credentials),
+      protectRegistrar(
+        proxy
+          ? createProxiedNamecheap(credentials, proxy)
+          : createRegistrar(name, credentials),
+        getStoredCredentials(account.id),
+      ),
     );
     clients.set(account.id, client);
     clientCredentials.set(account.id, fingerprint);
@@ -242,6 +247,12 @@ function readRegistrarEntry(name: string): RegistrarPortfolioEntry | null {
   if (!cached) return null;
   return {
     ...cached.data,
+    lastError: cached.data.lastError
+      ? redactRegistrarMessage(
+          cached.data.lastError,
+          getStoredCredentials(name),
+        )
+      : null,
     domains: cached.data.domains.map(reviveDomainDates),
   };
 }
@@ -679,7 +690,12 @@ export async function connectRegistrarAccount(
   // Validate through the proxy when one is configured, so a fixed-IP account is
   // tested over the connection it will actually use.
   const client = new RegistrarClient(
-    proxy ? createProxiedNamecheap(clean, proxy) : createRegistrar(name, clean),
+    protectRegistrar(
+      proxy
+        ? createProxiedNamecheap(clean, proxy)
+        : createRegistrar(name, clean),
+      clean,
+    ),
   );
   const result = await client.testConnection();
   if (!result.success)

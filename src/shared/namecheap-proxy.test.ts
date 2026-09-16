@@ -9,7 +9,7 @@ const values = {
   username: 'account',
   apiKey: 'api-secret',
   clientIp: '9.9.9.9',
-  proxyUrl: 'http://proxy-user:proxy-secret@8.8.8.8:8080',
+  proxyUrl: 'https://proxy-user:proxy-secret@8.8.8.8:8080',
   proxyIp: '8.8.4.4',
 };
 
@@ -64,7 +64,7 @@ describe('Namecheap proxy configuration', () => {
     'http://0x7f000001:8080',
     'http://[::1]:8080',
     'socks5://8.8.8.8:8080',
-    'https://8.8.8.8:8080',
+    'http://proxy-user:proxy-secret@8.8.8.8:8080',
     'http://8.8.8.8/path',
     'http://8.8.8.8?secret=x',
     'http://8.8.8.8#x',
