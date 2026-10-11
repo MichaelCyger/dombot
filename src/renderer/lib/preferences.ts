@@ -1,4 +1,9 @@
 import { create } from 'zustand';
+import {
+  defaultColumnLayout,
+  normalizeColumnLayout,
+  type ColumnLayout,
+} from './column-layout';
 
 /**
  * Per-device display preferences (Settings → General), persisted in
@@ -15,6 +20,8 @@ export interface Preferences {
   /** Domains table density. `compact` is the phone layout's tighter spacing
    * and smaller type; phones always use it regardless. */
   density: 'normal' | 'compact';
+  /** Which Domains columns show, and in what order, per view. */
+  columns: { active: ColumnLayout; archive: ColumnLayout };
 }
 
 export const PAGE_SIZES = [25, 50, 100, 250];
@@ -38,6 +45,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sortKey: 'domainName',
   sortDir: 'asc',
   density: 'normal',
+  columns: {
+    active: defaultColumnLayout('active'),
+    archive: defaultColumnLayout('archive'),
+  },
 };
 
 const STORAGE_KEY = 'dombot-preferences';
@@ -64,6 +75,20 @@ export function parsePreferences(raw: string | null): Preferences {
       v.sortDir === 'asc' || v.sortDir === 'desc' ? v.sortDir : d.sortDir,
     density:
       v.density === 'normal' || v.density === 'compact' ? v.density : d.density,
+    columns: {
+      active: normalizeColumnLayout(
+        v.columns && typeof v.columns === 'object'
+          ? (v.columns as { active?: unknown }).active
+          : undefined,
+        'active',
+      ),
+      archive: normalizeColumnLayout(
+        v.columns && typeof v.columns === 'object'
+          ? (v.columns as { archive?: unknown }).archive
+          : undefined,
+        'archive',
+      ),
+    },
   };
 }
 
@@ -84,11 +109,11 @@ export const usePreferences = create<PreferencesState>((set, get) => ({
   ...readStored(),
   setPreferences: (patch) => {
     set(patch);
-    const { pageSize, sortKey, sortDir, density } = get();
+    const { pageSize, sortKey, sortDir, density, columns } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ pageSize, sortKey, sortDir, density }),
+        JSON.stringify({ pageSize, sortKey, sortDir, density, columns }),
       );
     } catch {
       // Persisting is best-effort; the in-memory state still updates.

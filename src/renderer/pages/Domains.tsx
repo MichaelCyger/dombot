@@ -77,10 +77,8 @@ import {
 } from '../components/activity/EventTypeBadge';
 import { FlagToggle } from '../components/domains/FlagToggle';
 import { RowActionsMenu } from '../components/domains/RowActionsMenu';
-import {
-  purchaseColumns,
-  purchaseDateColumn,
-} from '../components/domains/purchase-columns';
+import { ColumnPicker } from '../components/domains/ColumnPicker';
+import { purchaseColumns } from '../components/domains/purchase-columns';
 import { ImportDomainsDialog } from '../components/domains/ImportDomainsDialog';
 import { PurchaseDialog } from '../components/domains/PurchaseDialog';
 import { ListPriceDialog } from '../components/domains/ListPriceDialog';
@@ -108,6 +106,7 @@ import {
   utcDay,
 } from '../lib/date-range';
 import { usePreferences } from '../lib/preferences';
+import { visibleColumnKeys } from '../lib/column-layout';
 import { DataTable, type DataColumn } from '../components/data-table/DataTable';
 import { paginate, sortRows } from '../components/data-table/table-state';
 import {
@@ -520,16 +519,6 @@ function ShieldCheckFilled(props: React.ComponentProps<typeof ShieldCheck>) {
   );
 }
 
-/** Not useful once a name has left: there is nothing to renew or reconfigure.
- *  Registrar stays out too. Purchase and sale are what Archive is for. */
-const ARCHIVE_HIDDEN_COLUMNS = new Set([
-  'registrar',
-  'autoRenew',
-  'privacy',
-  'locked',
-  'nameservers',
-]);
-
 const COLUMNS: Column[] = [
   {
     key: 'domainName',
@@ -810,98 +799,83 @@ export default function Domains() {
   // The Registrar column carries the account too: a nickname always shows in
   // parens; an unnamed account shows its number only when the registrar has
   // siblings to tell apart. `null` from accountNumber() means a real nickname.
-  const columns = useMemo(() => {
+  // Every column the picker can show is in this map. Order and visibility
+  // come from the saved layout, not from where each column is built.
+  const columnByKey = useMemo(() => {
     const paren = (label: string | undefined, registrar: string) => {
       const n = accountNumber(label);
       if (n === null) return label ?? '';
       return multipleAccounts.has(registrar) ? `#${n}` : '';
     };
-    const base = COLUMNS.map((c) =>
-      c.key === 'registrar'
-        ? {
-            ...c,
-            render: (d: Domain, labels: RegistrarLabels) => {
-              // Names you added: a faint building rather than the logo, so
-              // they read apart from a connected account's names.
-              if (d.source === 'imported') {
-                const name = importedRegistrarName(d, labels);
-                return (
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <ImportedRegistrarIcon />
-                    {name || (
-                      <span className="text-muted-foreground">Unknown</span>
-                    )}
-                  </span>
-                );
-              }
-              const suffix = paren(d.accountLabel, d.registrar);
-              const label = registrarLabel(d.registrar, labels);
-              return (
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                  <RegistrarLogo
-                    name={d.registrar as RegistrarName}
-                    label={label}
-                    className="size-4"
-                  />
-                  {label}
-                  {suffix && (
-                    <span className="ml-1 text-xs text-muted-foreground/70">
-                      ({suffix})
-                    </span>
-                  )}
-                </span>
-              );
-            },
-            sortValue: (d: Domain, labels: RegistrarLabels) => {
-              if (d.source === 'imported')
-                return (
-                  d.importedRegistrarLabel ??
-                  registrarLabel(d.registrar, labels)
-                ).toLowerCase();
-              const name = registrarLabel(d.registrar, labels).toLowerCase();
-              const n = accountNumber(d.accountLabel);
-              const suffix =
-                n === null
-                  ? (d.accountLabel ?? '').toLowerCase()
-                  : multipleAccounts.has(d.registrar)
-                    ? String(n).padStart(4, '0')
-                    : '';
-              return suffix ? `${name} ${suffix}` : name;
-            },
+    const byKey = new Map<string, Column>();
+    for (const c of COLUMNS) {
+      if (c.key !== 'registrar') {
+        byKey.set(c.key, c);
+        continue;
+      }
+      byKey.set(c.key, {
+        ...c,
+        render: (d: Domain, labels: RegistrarLabels) => {
+          // Names you added: a faint building rather than the logo, so
+          // they read apart from a connected account's names.
+          if (d.source === 'imported') {
+            const name = importedRegistrarName(d, labels);
+            return (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <ImportedRegistrarIcon />
+                {name || <span className="text-muted-foreground">Unknown</span>}
+              </span>
+            );
           }
-        : c,
-    );
-    // Owned: pricing sits right after the name (and its Folder, added when
-    // the table is drawn). Archive: Purchased, Purchased for, Sold, and
-    // Sold for come after Created.
-    const at = base.findIndex(
-      (c) => c.key === (archiveView ? 'createdDate' : 'domainName'),
-    );
-    const extra = purchaseColumns({
+          const suffix = paren(d.accountLabel, d.registrar);
+          const label = registrarLabel(d.registrar, labels);
+          return (
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <RegistrarLogo
+                name={d.registrar as RegistrarName}
+                label={label}
+                className="size-4"
+              />
+              {label}
+              {suffix && (
+                <span className="ml-1 text-xs text-muted-foreground/70">
+                  ({suffix})
+                </span>
+              )}
+            </span>
+          );
+        },
+        sortValue: (d: Domain, labels: RegistrarLabels) => {
+          if (d.source === 'imported')
+            return (
+              d.importedRegistrarLabel ?? registrarLabel(d.registrar, labels)
+            ).toLowerCase();
+          const name = registrarLabel(d.registrar, labels).toLowerCase();
+          const n = accountNumber(d.accountLabel);
+          const suffix =
+            n === null
+              ? (d.accountLabel ?? '').toLowerCase()
+              : multipleAccounts.has(d.registrar)
+                ? String(n).padStart(4, '0')
+                : '';
+          return suffix ? `${name} ${suffix}` : name;
+        },
+      });
+    }
+    for (const extra of purchaseColumns({
       purchases,
       preferredCurrency: settings?.preferredCurrency ?? DEFAULT_CURRENCY,
       numberFormat: settings?.numberFormat ?? DEFAULT_NUMBER_FORMAT,
       onEditPurchase: setPurchaseFor,
       onEditSale: setSaleFor,
-      showSale: archiveView,
       isSold: (d) => ownership.get(toAscii(d.domainName))?.label === 'sold',
       listPrices,
       onEditListPrice: (d) => setListPriceFor([d]),
-    });
-    base.splice(at + 1, 0, ...extra);
-    return base;
-  }, [
-    multipleAccounts,
-    purchases,
-    listPrices,
-    settings,
-    archiveView,
-    ownership,
-  ]);
-
-  const tableColumns = archiveView
-    ? columns.filter((col) => !ARCHIVE_HIDDEN_COLUMNS.has(col.key))
-    : columns;
+    })) {
+      byKey.set(extra.key, extra);
+    }
+    return byKey;
+  }, [multipleAccounts, purchases, listPrices, settings, ownership]);
 
   // Pricing is computed locally in main and arrives with the portfolio; the only
   // gap is the brief moment after a live Sync resets it before it's re-read.
@@ -1454,25 +1428,20 @@ export default function Domains() {
       : []),
   ];
 
-  // Archive always shows Purchased and Purchased for. Active has no standing
-  // purchase column, so the date appears there only while that filter is set,
-  // after Created (the slot Sold uses on Archive).
-  const viewColumns = useMemo(() => {
-    if (
-      archiveView ||
-      (!calendarDay(purchasedFrom) && !calendarDay(purchasedTo))
-    ) {
-      return tableColumns;
-    }
-    const next = [...tableColumns];
-    const createdAt = next.findIndex((c) => c.key === 'createdDate');
-    next.splice(
-      createdAt + 1,
-      0,
-      purchaseDateColumn(purchases, setPurchaseFor),
-    );
-    return next;
-  }, [tableColumns, archiveView, purchasedFrom, purchasedTo, purchases]);
+  // Each view remembers its own columns on this Mac. A Purchased filter on
+  // Active still shows that column after Created until the picker turns it on.
+  const columnPrefs = usePreferences((s) => s.columns);
+  const setPreferences = usePreferences((s) => s.setPreferences);
+  const columnView = archiveView ? 'archive' : 'active';
+  const purchasedFilterOn =
+    calendarDay(purchasedFrom) !== null || calendarDay(purchasedTo) !== null;
+  const visibleKeys = useMemo(
+    () =>
+      visibleColumnKeys(columnPrefs[columnView], columnView, {
+        purchasedFilter: purchasedFilterOn,
+      }),
+    [columnPrefs, columnView, purchasedFilterOn],
+  );
 
   function setListView(next: 'owned' | 'archive') {
     setFolder([]);
@@ -1557,7 +1526,9 @@ export default function Domains() {
       return true;
     });
 
-    const col = viewColumns.find((c) => c.key === sortKey) ?? viewColumns[0];
+    // A hidden column can still be the sort. Falling back to the first
+    // visible column would change the order when the header disappears.
+    const col = columnByKey.get(sortKey) ?? columnByKey.get('domainName');
     // Renewal isn't a Domain field — sort it from the pricing map.
     const valueOf = (d: Domain): SortValue | null => {
       if (sortKey === RENEWAL) {
@@ -1573,12 +1544,12 @@ export default function Domains() {
           null
         );
       }
-      return col.sortValue(d, portfolioRegistrarLabels);
+      return col?.sortValue(d, portfolioRegistrarLabels) ?? null;
     };
     return sortRows(rows, valueOf, sortDir);
   }, [
     shown,
-    viewColumns,
+    columnByKey,
     portfolioRegistrarLabels,
     search,
     tld,
@@ -1754,9 +1725,9 @@ export default function Domains() {
     }
   }
 
-  // Table columns: the data columns, with Folder (Status in Archive) after
-  // the domain and Renewal before Auto-renew. Cells show a placeholder while
-  // their data loads, and a dash where a departed name has none.
+  // Table columns follow the saved layout for this view. Cells show a
+  // placeholder while their data loads, and a dash where a departed name
+  // has none.
   const renderCell = (col: Column, d: Domain) => {
     const registration =
       col.key === 'registrar' ||
@@ -1838,18 +1809,8 @@ export default function Domains() {
     return col.render(d, portfolioRegistrarLabels);
   };
   const dataColumns: DataColumn<Domain>[] = [];
-  for (const col of viewColumns) {
-    dataColumns.push({
-      key: col.key,
-      label: col.label,
-      align: col.align,
-      compact: col.compact,
-      hideOnMobile: col.hideOnMobile,
-      headClassName: col.key === 'autoRenew' ? 'pl-[8px]' : undefined,
-      cellClassName: col.key === 'autoRenew' ? 'pl-[6px]' : undefined,
-      cell: (d) => renderCell(col, d),
-    });
-    if (col.key === 'domainName') {
+  for (const key of visibleKeys) {
+    if (key === FOLDER) {
       dataColumns.push({
         key: FOLDER,
         label: archiveView ? 'Status' : 'Folder',
@@ -1866,8 +1827,9 @@ export default function Domains() {
             />
           ),
       });
+      continue;
     }
-    if (col.key === 'expirationDate' && !archiveView) {
+    if (key === RENEWAL) {
       dataColumns.push({
         key: RENEWAL,
         label: 'Renewal',
@@ -1878,7 +1840,20 @@ export default function Domains() {
           <RenewalCell info={pricing[domainKey(d)]} loading={pricingLoading} />
         ),
       });
+      continue;
     }
+    const col = columnByKey.get(key);
+    if (!col) continue;
+    dataColumns.push({
+      key: col.key,
+      label: col.label,
+      align: col.align,
+      compact: col.compact,
+      hideOnMobile: col.hideOnMobile,
+      headClassName: col.key === 'autoRenew' ? 'pl-[8px]' : undefined,
+      cellClassName: col.key === 'autoRenew' ? 'pl-[6px]' : undefined,
+      cell: (d) => renderCell(col, d),
+    });
   }
 
   // Sync failures, in red under the Sync button: the whole sync, or which
@@ -1986,6 +1961,18 @@ export default function Domains() {
               {exportNote.text}
             </span>
           )}
+          <div className="order-last ml-auto">
+            <ColumnPicker
+              view={columnView}
+              layout={columnPrefs[columnView]}
+              purchasedFilter={purchasedFilterOn}
+              onLayout={(next) =>
+                setPreferences({
+                  columns: { ...columnPrefs, [columnView]: next },
+                })
+              }
+            />
+          </div>
         </FilterToolbar>
 
         {/* Bulk action bar — contextual: appears once any row is selected, or
