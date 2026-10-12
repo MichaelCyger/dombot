@@ -1972,11 +1972,13 @@ export default function Domains() {
           configured — so its toolbar and structure stay put; the empty body row
           carries the contextual prompt (configure a registrar / refresh / no
           matches). */}
-        {/* Active/Archive on the left and the column picker on the right,
-            then the search and filters on their own row, kept close under it.
-            Its counts stand in for a subtitle under the title. */}
-        <div className="mt-[7px] flex flex-col gap-5">
-          <div className="flex items-center justify-between gap-3">
+        {/* Below xl: Active/Archive on the left and the column picker on the
+            right, then the search and filters on their own row. From xl it's
+            one wrapping row again (the inner boxes become `contents`), with
+            Columns at the end. Active/Archive's counts stand in for a subtitle
+            under the title. */}
+        <div className="mt-[7px] flex flex-col gap-5 xl:mt-3 xl:flex-row xl:flex-wrap xl:items-center xl:gap-3.5">
+          <div className="flex items-center justify-between gap-3 xl:contents">
             <OwnershipSwitch
               archive={archiveView}
               ownedCount={ownedCount}
@@ -1984,16 +1986,18 @@ export default function Domains() {
               onOwned={() => setListView('owned')}
               onArchive={() => setListView('archive')}
             />
-            <ColumnPicker
-              columns={dataColumns}
-              layout={columnLayout}
-              onChange={setColumnLayout}
-              forceVisible={filteredDateColumns}
-            />
+            <div className="xl:order-last xl:ml-auto">
+              <ColumnPicker
+                columns={dataColumns}
+                layout={columnLayout}
+                onChange={setColumnLayout}
+                forceVisible={filteredDateColumns}
+              />
+            </div>
           </div>
           <FilterToolbar
             id="domains"
-            className="mt-0 sm:mt-0"
+            className="mt-0 sm:mt-0 xl:contents"
             search={search}
             onSearch={(value) => {
               setSearch(value);
@@ -2006,7 +2010,8 @@ export default function Domains() {
             {exportNote && (
               <span
                 className={cn(
-                  'inline-flex items-center gap-1.5 text-sm sm:order-last',
+                  // Before Columns, which is last.
+                  'inline-flex items-center gap-1.5 text-sm sm:order-last xl:order-[9998]',
                   exportNote.error ? 'text-destructive' : 'text-brand',
                 )}
                 role="status"
