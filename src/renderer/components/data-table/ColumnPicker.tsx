@@ -206,7 +206,7 @@ export function ColumnPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="h-9">
+        <Button variant="outline" className="h-9 text-muted-foreground">
           <Columns3 />
           Columns
         </Button>
