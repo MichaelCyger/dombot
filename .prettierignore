@@ -6,3 +6,8 @@ package-lock.json
 iana-registrars.json
 registrar-mapping.json
 temp
+.claude
+worker-configuration.d.ts
+# Hand-compacted on purpose (one-line rules); keep them that way.
+site/index.html
+site/src/styles.css
