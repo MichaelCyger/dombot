@@ -206,9 +206,13 @@ export function ColumnPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="h-9 text-muted-foreground">
+        {/* Icon only on phones, where it shares a row with the page's switch. */}
+        <Button
+          variant="outline"
+          className="h-9 text-muted-foreground max-sm:w-9 max-sm:px-0"
+        >
           <Columns3 />
-          Columns
+          <span className="max-sm:sr-only">Columns</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent

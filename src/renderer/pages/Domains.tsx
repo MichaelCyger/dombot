@@ -1972,14 +1972,11 @@ export default function Domains() {
           configured — so its toolbar and structure stay put; the empty body row
           carries the contextual prompt (configure a registrar / refresh / no
           matches). */}
-        {/* Toolbar: search and filters flow inline and wrap together as equal
-              items. Extra top margin separates it from the title/refresh row
-              above. */}
-        <FilterToolbar
-          id="domains"
-          // Active/Archive leads the toolbar; its counts stand in for a
-          // subtitle under the title.
-          switch={
+        {/* Active/Archive on the left and the column picker on the right,
+            then the search and filters on their own row, kept close under it.
+            Its counts stand in for a subtitle under the title. */}
+        <div className="-mt-[3px] flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
             <OwnershipSwitch
               archive={archiveView}
               ownedCount={ownedCount}
@@ -1987,29 +1984,6 @@ export default function Domains() {
               onOwned={() => setListView('owned')}
               onArchive={() => setListView('archive')}
             />
-          }
-          search={search}
-          onSearch={(value) => {
-            setSearch(value);
-            setPage(0);
-          }}
-          searchPlaceholder="Search domains…"
-          fields={filterFields}
-          presets={['registrar', 'tld', 'folder']}
-        >
-          {exportNote && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1.5 text-sm sm:order-last',
-                exportNote.error ? 'text-destructive' : 'text-brand',
-              )}
-              role="status"
-            >
-              {!exportNote.error && <CircleCheck className="size-4" />}
-              {exportNote.text}
-            </span>
-          )}
-          <div className="order-last ml-auto">
             <ColumnPicker
               columns={dataColumns}
               layout={columnLayout}
@@ -2017,7 +1991,32 @@ export default function Domains() {
               forceVisible={filteredDateColumns}
             />
           </div>
-        </FilterToolbar>
+          <FilterToolbar
+            id="domains"
+            className="mt-0 sm:mt-0"
+            search={search}
+            onSearch={(value) => {
+              setSearch(value);
+              setPage(0);
+            }}
+            searchPlaceholder="Search domains…"
+            fields={filterFields}
+            presets={['registrar', 'tld', 'folder']}
+          >
+            {exportNote && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-sm sm:order-last',
+                  exportNote.error ? 'text-destructive' : 'text-brand',
+                )}
+                role="status"
+              >
+                {!exportNote.error && <CircleCheck className="size-4" />}
+                {exportNote.text}
+              </span>
+            )}
+          </FilterToolbar>
+        </div>
 
         {/* Bulk action bar — contextual: appears once any row is selected, or
             while a bulk job is running (as a progress pill). */}
