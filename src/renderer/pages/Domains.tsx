@@ -7,7 +7,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   EyeOff,
   Building2,
-  Calendar,
   CalendarClock,
   ChevronDown,
   CircleCheck,
@@ -102,16 +101,20 @@ import { BulkBar, type OwnershipAction } from '../components/domains/BulkBar';
 import { BulkActionDialog } from '../components/domains/BulkActionDialog';
 import { defaultBulkOp } from '../lib/bulk';
 import {
-  calendarDay,
-  dateRangeSummary,
+  FUTURE_DATE_PRESETS,
+  isDateRangeSet,
   matchesDateRange,
+  NO_DATE_RANGE,
+  PAST_DATE_PRESETS,
   utcDay,
+  type DatePresetId,
+  type DateRange,
 } from '../lib/date-range';
 import { usePreferences } from '../lib/preferences';
 import { DataTable, type DataColumn } from '../components/data-table/DataTable';
 import { paginate, sortRows } from '../components/data-table/table-state';
+import { dateRangeField } from '../components/data-table/DateRangeFilter';
 import {
-  DateRangeInputs,
   RangeInputs,
   rangeSummary,
   type FilterOption,
@@ -521,9 +524,9 @@ function ShieldCheckFilled(props: React.ComponentProps<typeof ShieldCheck>) {
 }
 
 /** Not useful once a name has left: there is nothing to renew or reconfigure.
- *  Registrar stays out too. Purchase and sale are what Archive is for. */
+ *  Created stays out too, to make room for the purchase and sale. */
 const ARCHIVE_HIDDEN_COLUMNS = new Set([
-  'registrar',
+  'createdDate',
   'autoRenew',
   'privacy',
   'locked',
@@ -705,28 +708,6 @@ function expiryColor(days: number | null): string {
 /** Days past expiry within which a domain is usually still renewable. */
 const RECOVERABLE_DAYS = 45;
 
-/** Sentinel expiration value that keeps only already-expired domains. */
-const EXPIRED = 'expired';
-
-/**
- * Expiration-filter options for the multi-select. No "all" entry — an empty
- * selection means no expiration filter. EXPIRED keeps past-due domains; a
- * numeric value keeps domains expiring within that many upcoming days.
- */
-const EXPIRY_OPTIONS: { value: string; label: string }[] = [
-  { value: EXPIRED, label: 'Expired' },
-  { value: '30', label: 'Next 30 days' },
-  { value: '60', label: 'Next 60 days' },
-  { value: '90', label: 'Next 90 days' },
-];
-
-/** Whether a domain (with `days` until expiry) matches one expiration option. */
-function matchesExpiryOption(option: string, days: number | null): boolean {
-  if (days === null) return false;
-  if (option === EXPIRED) return days < 0;
-  return days >= 0 && days <= Number(option);
-}
-
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function Domains() {
@@ -873,9 +854,9 @@ export default function Domains() {
     );
     // Owned: pricing sits right after the name (and its Folder, added when
     // the table is drawn). Archive: Purchased, Purchased for, Sold, and
-    // Sold for come after Created.
+    // Sold for come after Registrar.
     const at = base.findIndex(
-      (c) => c.key === (archiveView ? 'createdDate' : 'domainName'),
+      (c) => c.key === (archiveView ? 'registrar' : 'domainName'),
     );
     const extra = purchaseColumns({
       purchases,
@@ -1009,7 +990,6 @@ export default function Domains() {
     const account = params.get('account');
     return account ? [account] : [];
   });
-  const [expiry, setExpiry] = useState<string[]>([]);
   const [ns, setNs] = useState<string[]>([]);
   const [folder, setFolder] = useState<string[]>([]);
   // Owned only: names with or without an asking price.
@@ -1018,16 +998,12 @@ export default function Domains() {
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const pricingFilter = priceMin !== '' || priceMax !== '';
-  // Date filters: "" on a side means unbounded. Created, Expires, and
-  // Purchased apply on both tabs. Sold applies on Archive only.
-  const [createdFrom, setCreatedFrom] = useState('');
-  const [createdTo, setCreatedTo] = useState('');
-  const [expiresFrom, setExpiresFrom] = useState('');
-  const [expiresTo, setExpiresTo] = useState('');
-  const [purchasedFrom, setPurchasedFrom] = useState('');
-  const [purchasedTo, setPurchasedTo] = useState('');
-  const [soldFrom, setSoldFrom] = useState('');
-  const [soldTo, setSoldTo] = useState('');
+  // Date filters (see lib/date-range). Expiration and Purchased apply on
+  // both tabs, Created on Active only, Sold on Archive only.
+  const [created, setCreated] = useState<DateRange>(NO_DATE_RANGE);
+  const [expires, setExpires] = useState<DateRange>(NO_DATE_RANGE);
+  const [purchased, setPurchased] = useState<DateRange>(NO_DATE_RANGE);
+  const [sold, setSold] = useState<DateRange>(NO_DATE_RANGE);
   // Sort and page size open at the Settings → General defaults; changes made
   // here last for this visit only.
   const [sortKey, setSortKey] = useState(
@@ -1162,22 +1138,6 @@ export default function Domains() {
     if (accounts.length > 0 && added.length > 0) added[0].divider = true;
     return [...accounts, ...added];
   }, [portfolio, importedList, portfolioRegistrarLabels, multipleAccounts]);
-  // Expiration windows are cumulative, so their counts intentionally overlap
-  // (a domain due in 20 days matches the 30-, 60-, and 90-day options).
-
-  const expiryOptions = useMemo(
-    () =>
-      EXPIRY_OPTIONS.map((o) => ({
-        ...o,
-        count: ownedRows.reduce(
-          (n, d) =>
-            n +
-            (matchesExpiryOption(o.value, daysUntil(d.expirationDate)) ? 1 : 0),
-          0,
-        ),
-      })),
-    [ownedRows],
-  );
 
   // Nameserver groups (by base domain, with per-provider splits) plus the set of
   // groups each domain belongs to. Derived from `merged`, so it fills in as
@@ -1294,34 +1254,30 @@ export default function Domains() {
       set(next);
       setPage(0);
     });
-  const dateField = (
+  // Each shortcut's count is over this tab's names, before other filters,
+  // like the list filters' counts.
+  const dateFilter = (
     key: string,
     label: string,
-    from: string,
-    to: string,
-    apply: (from: string, to: string) => void,
-  ): FilterField => ({
-    kind: 'custom',
-    key,
-    label,
-    icon: Calendar,
-    summary: dateRangeSummary(from, to),
-    onClear: () => {
-      apply('', '');
-      setPage(0);
-    },
-    content: (
-      <DateRangeInputs
-        label={label}
-        from={from}
-        to={to}
-        onChange={(nextFrom, nextTo) => {
-          apply(nextFrom, nextTo);
-          setPage(0);
-        }}
-      />
-    ),
-  });
+    range: DateRange,
+    set: (next: DateRange) => void,
+    presets: DatePresetId[],
+    dayOf: (d: Domain) => string | null | undefined,
+    icon?: typeof CalendarClock,
+  ) =>
+    dateRangeField({
+      key,
+      label,
+      icon,
+      range,
+      presets,
+      count: (r) => shown.filter((d) => matchesDateRange(dayOf(d), r)).length,
+      onChange: (next) => {
+        set(next);
+        setPage(0);
+      },
+    });
+  const purchaseOf = (d: Domain) => purchases[toAscii(d.domainName)];
   const filterFields: FilterField[] = [
     listFilter(
       {
@@ -1355,17 +1311,6 @@ export default function Domains() {
         plural: 'providers',
       },
       setNs,
-    ),
-    listFilter(
-      {
-        key: 'expires',
-        label: 'Expiration',
-        icon: CalendarClock,
-        options: expiryOptions,
-        selected: expiry,
-        plural: 'ranges',
-      },
-      setExpiry,
     ),
     // Owned: folders and Hidden. Archive: status.
     ...(!archiveView || archiveCount > 0
@@ -1420,50 +1365,55 @@ export default function Domains() {
             ),
           },
         ]),
-    dateField('createdDate', 'Created', createdFrom, createdTo, (from, to) => {
-      setCreatedFrom(from);
-      setCreatedTo(to);
-    }),
-    dateField(
+    // Created is an Active column, so its filter is Active only.
+    ...(archiveView
+      ? []
+      : [
+          dateFilter(
+            'createdDate',
+            'Created',
+            created,
+            setCreated,
+            PAST_DATE_PRESETS,
+            (d) => utcDay(d.createdDate),
+          ),
+        ]),
+    dateFilter(
       'expirationDate',
-      'Expires',
-      expiresFrom,
-      expiresTo,
-      (from, to) => {
-        setExpiresFrom(from);
-        setExpiresTo(to);
-      },
+      'Expiration',
+      expires,
+      setExpires,
+      FUTURE_DATE_PRESETS,
+      (d) => utcDay(d.expirationDate),
+      CalendarClock,
     ),
-    dateField(
+    dateFilter(
       'purchaseDate',
       'Purchased',
-      purchasedFrom,
-      purchasedTo,
-      (from, to) => {
-        setPurchasedFrom(from);
-        setPurchasedTo(to);
-      },
+      purchased,
+      setPurchased,
+      PAST_DATE_PRESETS,
+      (d) => purchaseOf(d)?.purchaseDate,
     ),
     ...(archiveView
       ? [
-          dateField('saleDate', 'Sold', soldFrom, soldTo, (from, to) => {
-            setSoldFrom(from);
-            setSoldTo(to);
-          }),
+          dateFilter(
+            'saleDate',
+            'Sold',
+            sold,
+            setSold,
+            PAST_DATE_PRESETS,
+            (d) => purchaseOf(d)?.saleDate,
+          ),
         ]
       : []),
   ];
 
   // Archive always shows Purchased and Purchased for. Active has no standing
   // purchase column, so the date appears there only while that filter is set,
-  // after Created (the slot Sold uses on Archive).
+  // after Created.
   const viewColumns = useMemo(() => {
-    if (
-      archiveView ||
-      (!calendarDay(purchasedFrom) && !calendarDay(purchasedTo))
-    ) {
-      return tableColumns;
-    }
+    if (archiveView || !isDateRangeSet(purchased)) return tableColumns;
     const next = [...tableColumns];
     const createdAt = next.findIndex((c) => c.key === 'createdDate');
     next.splice(
@@ -1472,12 +1422,32 @@ export default function Domains() {
       purchaseDateColumn(purchases, setPurchaseFor),
     );
     return next;
-  }, [tableColumns, archiveView, purchasedFrom, purchasedTo, purchases]);
+  }, [tableColumns, archiveView, purchased, purchases]);
+
+  // A sort whose column has gone (Purchased cleared on Active, Sold or BIN
+  // price after a tab switch) goes back to the Settings default, or Domain
+  // when that column isn't shown either, so a header always shows the sort.
+  useEffect(() => {
+    const shownKeys = new Set([
+      ...viewColumns.map((c) => c.key),
+      FOLDER,
+      ...(archiveView ? [] : [RENEWAL]),
+    ]);
+    if (shownKeys.has(sortKey)) return;
+    const fallback = usePreferences.getState();
+    const useDefault = shownKeys.has(fallback.sortKey);
+    setSortKey(useDefault ? fallback.sortKey : 'domainName');
+    setSortDir(useDefault ? fallback.sortDir : 'asc');
+  }, [viewColumns, archiveView, sortKey]);
 
   function setListView(next: 'owned' | 'archive') {
     setFolder([]);
     setPriceMin('');
     setPriceMax('');
+    // Created is Active only and Sold is Archive only; neither waits,
+    // hidden, to come back.
+    setCreated(NO_DATE_RANGE);
+    setSold(NO_DATE_RANGE);
     setPage(0);
     const nextParams = new URLSearchParams(params);
     if (next === 'archive') nextParams.set('view', 'archive');
@@ -1504,12 +1474,6 @@ export default function Domains() {
         )
       )
         return false;
-      // Expiration: keep a domain matching ANY selected window ("Expired" =
-      // past-due; a numeric window = within that many upcoming days).
-      if (expiry.length > 0) {
-        const days = daysUntil(d.expirationDate);
-        if (!expiry.some((o) => matchesExpiryOption(o, days))) return false;
-      }
       // Nameservers: keep a domain in ANY selected nameserver group.
       if (ns.length > 0) {
         const keys = nsKeysByDomain.get(domainKey(d));
@@ -1523,13 +1487,11 @@ export default function Domains() {
       // Date bounds are inclusive calendar days. A blank date on the row
       // stays out. Sold is an Archive column, so that bound waits there.
       const record = purchases[toAscii(d.domainName)];
-      if (!matchesDateRange(utcDay(d.createdDate), createdFrom, createdTo))
+      if (!archiveView && !matchesDateRange(utcDay(d.createdDate), created))
         return false;
-      if (!matchesDateRange(utcDay(d.expirationDate), expiresFrom, expiresTo))
-        return false;
-      if (!matchesDateRange(record?.purchaseDate, purchasedFrom, purchasedTo))
-        return false;
-      if (archiveView && !matchesDateRange(record?.saleDate, soldFrom, soldTo))
+      if (!matchesDateRange(utcDay(d.expirationDate), expires)) return false;
+      if (!matchesDateRange(record?.purchaseDate, purchased)) return false;
+      if (archiveView && !matchesDateRange(record?.saleDate, sold))
         return false;
       // Owned vs Archive comes from the event log. In Archive the filter is
       // the status; in Owned it's the folder (a real folder, Hidden, or None),
@@ -1583,7 +1545,6 @@ export default function Domains() {
     search,
     tld,
     registrar,
-    expiry,
     ns,
     nsKeysByDomain,
     folder,
@@ -1594,14 +1555,10 @@ export default function Domains() {
     priceMax,
     listPrices,
     purchases,
-    createdFrom,
-    createdTo,
-    expiresFrom,
-    expiresTo,
-    purchasedFrom,
-    purchasedTo,
-    soldFrom,
-    soldTo,
+    created,
+    expires,
+    purchased,
+    sold,
     archiveView,
     archiveLabelOf,
     sortKey,
