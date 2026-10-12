@@ -20,7 +20,9 @@ export function decodeText(bytes: Uint8Array): string {
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf)
     return new TextDecoder('utf-8').decode(bytes.subarray(3));
   try {
-    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(
+      bytes,
+    );
   } catch {
     return new TextDecoder('windows-1252').decode(bytes);
   }
