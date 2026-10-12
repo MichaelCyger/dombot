@@ -257,7 +257,7 @@ export function ColumnPicker({
                     tabIndex={-1}
                     aria-hidden
                     onPointerDown={(event) => onPointerDown(event, key)}
-                    className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+                    className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing dark:text-muted-foreground/60"
                   >
                     <GripVertical className="size-4" />
                   </button>
