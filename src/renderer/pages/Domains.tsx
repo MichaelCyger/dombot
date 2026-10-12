@@ -1975,7 +1975,7 @@ export default function Domains() {
         {/* Active/Archive on the left and the column picker on the right,
             then the search and filters on their own row, kept close under it.
             Its counts stand in for a subtitle under the title. */}
-        <div className="-mt-[3px] flex flex-col gap-2">
+        <div className="mt-[7px] flex flex-col gap-5">
           <div className="flex items-center justify-between gap-3">
             <OwnershipSwitch
               archive={archiveView}
