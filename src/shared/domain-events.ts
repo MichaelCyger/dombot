@@ -37,8 +37,7 @@ export type DomainEventSource =
 
 /** Who records a change you asked for: you in the app, or an MCP client. */
 export type UserSource =
-  | typeof DomainEventSource.User
-  | typeof DomainEventSource.Agent;
+  typeof DomainEventSource.User | typeof DomainEventSource.Agent;
 
 const EVENT_TYPES = new Set<string>(Object.values(DomainEventType));
 const EVENT_SOURCES = new Set<string>(Object.values(DomainEventSource));

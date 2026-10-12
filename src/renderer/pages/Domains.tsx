@@ -7,7 +7,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   EyeOff,
   Building2,
-  Calendar,
   CalendarClock,
   ChevronDown,
   CircleCheck,
@@ -77,7 +76,6 @@ import {
 } from '../components/activity/EventTypeBadge';
 import { FlagToggle } from '../components/domains/FlagToggle';
 import { RowActionsMenu } from '../components/domains/RowActionsMenu';
-import { ColumnPicker } from '../components/domains/ColumnPicker';
 import { purchaseColumns } from '../components/domains/purchase-columns';
 import { ImportDomainsDialog } from '../components/domains/ImportDomainsDialog';
 import { PurchaseDialog } from '../components/domains/PurchaseDialog';
@@ -100,17 +98,29 @@ import { BulkBar, type OwnershipAction } from '../components/domains/BulkBar';
 import { BulkActionDialog } from '../components/domains/BulkActionDialog';
 import { defaultBulkOp } from '../lib/bulk';
 import {
-  calendarDay,
-  dateRangeSummary,
+  FUTURE_DATE_PRESETS,
+  isDateRangeSet,
   matchesDateRange,
+  NO_DATE_RANGE,
+  PAST_DATE_PRESETS,
   utcDay,
+  type DatePresetId,
+  type DateRange,
 } from '../lib/date-range';
 import { usePreferences } from '../lib/preferences';
-import { visibleColumnKeys } from '../lib/column-layout';
+import {
+  ColumnPicker,
+  useColumnLayout,
+} from '../components/data-table/ColumnPicker';
+import {
+  applyColumnLayout,
+  type ColumnLayout,
+  type LayoutColumn,
+} from '../components/data-table/column-layout';
 import { DataTable, type DataColumn } from '../components/data-table/DataTable';
 import { paginate, sortRows } from '../components/data-table/table-state';
+import { dateRangeField } from '../components/data-table/DateRangeFilter';
 import {
-  DateRangeInputs,
   RangeInputs,
   rangeSummary,
   type FilterOption,
@@ -519,6 +529,77 @@ function ShieldCheckFilled(props: React.ComponentProps<typeof ShieldCheck>) {
   );
 }
 
+/**
+ * Each tab's columns in their default order, and which start off until the
+ * Columns picker turns them on. Domain is locked first. Archive can show the
+ * registration columns too: names still in an account stay editable, and
+ * departed names show a dash.
+ */
+const VIEW_COLUMNS: Record<'active' | 'archive', ColumnLayout> = {
+  active: {
+    order: [
+      'domainName',
+      FOLDER,
+      'binPrice',
+      'minOffer',
+      'registrar',
+      'createdDate',
+      'purchaseDate',
+      'purchaseAmount',
+      'expirationDate',
+      RENEWAL,
+      'autoRenew',
+      'privacy',
+      'locked',
+      'nameservers',
+    ],
+    hidden: ['purchaseDate', 'purchaseAmount'],
+  },
+  archive: {
+    order: [
+      'domainName',
+      FOLDER,
+      'registrar',
+      'purchaseDate',
+      'purchaseAmount',
+      'saleDate',
+      'saleAmount',
+      'createdDate',
+      'expirationDate',
+      'binPrice',
+      'minOffer',
+      RENEWAL,
+      'autoRenew',
+      'privacy',
+      'locked',
+      'nameservers',
+    ],
+    hidden: [
+      'createdDate',
+      'binPrice',
+      'minOffer',
+      RENEWAL,
+      'autoRenew',
+      'privacy',
+      'locked',
+      'nameservers',
+    ],
+  },
+};
+
+const LAYOUT_COLUMNS: Record<'active' | 'archive', LayoutColumn[]> = {
+  active: layoutColumns(VIEW_COLUMNS.active),
+  archive: layoutColumns(VIEW_COLUMNS.archive),
+};
+
+function layoutColumns({ order, hidden }: ColumnLayout): LayoutColumn[] {
+  return order.map((key) => ({
+    key,
+    locked: key === 'domainName',
+    defaultHidden: hidden.includes(key),
+  }));
+}
+
 const COLUMNS: Column[] = [
   {
     key: 'domainName',
@@ -693,28 +774,6 @@ function expiryColor(days: number | null): string {
 
 /** Days past expiry within which a domain is usually still renewable. */
 const RECOVERABLE_DAYS = 45;
-
-/** Sentinel expiration value that keeps only already-expired domains. */
-const EXPIRED = 'expired';
-
-/**
- * Expiration-filter options for the multi-select. No "all" entry — an empty
- * selection means no expiration filter. EXPIRED keeps past-due domains; a
- * numeric value keeps domains expiring within that many upcoming days.
- */
-const EXPIRY_OPTIONS: { value: string; label: string }[] = [
-  { value: EXPIRED, label: 'Expired' },
-  { value: '30', label: 'Next 30 days' },
-  { value: '60', label: 'Next 60 days' },
-  { value: '90', label: 'Next 90 days' },
-];
-
-/** Whether a domain (with `days` until expiry) matches one expiration option. */
-function matchesExpiryOption(option: string, days: number | null): boolean {
-  if (days === null) return false;
-  if (option === EXPIRED) return days < 0;
-  return days >= 0 && days <= Number(option);
-}
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
@@ -983,7 +1042,6 @@ export default function Domains() {
     const account = params.get('account');
     return account ? [account] : [];
   });
-  const [expiry, setExpiry] = useState<string[]>([]);
   const [ns, setNs] = useState<string[]>([]);
   const [folder, setFolder] = useState<string[]>([]);
   // Owned only: names with or without an asking price.
@@ -992,16 +1050,12 @@ export default function Domains() {
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const pricingFilter = priceMin !== '' || priceMax !== '';
-  // Date filters: "" on a side means unbounded. Created, Expires, and
-  // Purchased apply on both tabs. Sold applies on Archive only.
-  const [createdFrom, setCreatedFrom] = useState('');
-  const [createdTo, setCreatedTo] = useState('');
-  const [expiresFrom, setExpiresFrom] = useState('');
-  const [expiresTo, setExpiresTo] = useState('');
-  const [purchasedFrom, setPurchasedFrom] = useState('');
-  const [purchasedTo, setPurchasedTo] = useState('');
-  const [soldFrom, setSoldFrom] = useState('');
-  const [soldTo, setSoldTo] = useState('');
+  // Date filters (see lib/date-range). Expiration and Purchased apply on
+  // both tabs, Created on Active only, Sold on Archive only.
+  const [created, setCreated] = useState<DateRange>(NO_DATE_RANGE);
+  const [expires, setExpires] = useState<DateRange>(NO_DATE_RANGE);
+  const [purchased, setPurchased] = useState<DateRange>(NO_DATE_RANGE);
+  const [sold, setSold] = useState<DateRange>(NO_DATE_RANGE);
   // Sort and page size open at the Settings → General defaults; changes made
   // here last for this visit only.
   const [sortKey, setSortKey] = useState(
@@ -1136,22 +1190,6 @@ export default function Domains() {
     if (accounts.length > 0 && added.length > 0) added[0].divider = true;
     return [...accounts, ...added];
   }, [portfolio, importedList, portfolioRegistrarLabels, multipleAccounts]);
-  // Expiration windows are cumulative, so their counts intentionally overlap
-  // (a domain due in 20 days matches the 30-, 60-, and 90-day options).
-
-  const expiryOptions = useMemo(
-    () =>
-      EXPIRY_OPTIONS.map((o) => ({
-        ...o,
-        count: ownedRows.reduce(
-          (n, d) =>
-            n +
-            (matchesExpiryOption(o.value, daysUntil(d.expirationDate)) ? 1 : 0),
-          0,
-        ),
-      })),
-    [ownedRows],
-  );
 
   // Nameserver groups (by base domain, with per-provider splits) plus the set of
   // groups each domain belongs to. Derived from `merged`, so it fills in as
@@ -1268,34 +1306,30 @@ export default function Domains() {
       set(next);
       setPage(0);
     });
-  const dateField = (
+  // Each shortcut's count is over this tab's names, before other filters,
+  // like the list filters' counts.
+  const dateFilter = (
     key: string,
     label: string,
-    from: string,
-    to: string,
-    apply: (from: string, to: string) => void,
-  ): FilterField => ({
-    kind: 'custom',
-    key,
-    label,
-    icon: Calendar,
-    summary: dateRangeSummary(from, to),
-    onClear: () => {
-      apply('', '');
-      setPage(0);
-    },
-    content: (
-      <DateRangeInputs
-        label={label}
-        from={from}
-        to={to}
-        onChange={(nextFrom, nextTo) => {
-          apply(nextFrom, nextTo);
-          setPage(0);
-        }}
-      />
-    ),
-  });
+    range: DateRange,
+    set: (next: DateRange) => void,
+    presets: DatePresetId[],
+    dayOf: (d: Domain) => string | null | undefined,
+    icon?: typeof CalendarClock,
+  ) =>
+    dateRangeField({
+      key,
+      label,
+      icon,
+      range,
+      presets,
+      count: (r) => shown.filter((d) => matchesDateRange(dayOf(d), r)).length,
+      onChange: (next) => {
+        set(next);
+        setPage(0);
+      },
+    });
+  const purchaseOf = (d: Domain) => purchases[toAscii(d.domainName)];
   const filterFields: FilterField[] = [
     listFilter(
       {
@@ -1329,17 +1363,6 @@ export default function Domains() {
         plural: 'providers',
       },
       setNs,
-    ),
-    listFilter(
-      {
-        key: 'expires',
-        label: 'Expiration',
-        icon: CalendarClock,
-        options: expiryOptions,
-        selected: expiry,
-        plural: 'ranges',
-      },
-      setExpiry,
     ),
     // Owned: folders and Hidden. Archive: status.
     ...(!archiveView || archiveCount > 0
@@ -1394,59 +1417,100 @@ export default function Domains() {
             ),
           },
         ]),
-    dateField('createdDate', 'Created', createdFrom, createdTo, (from, to) => {
-      setCreatedFrom(from);
-      setCreatedTo(to);
-    }),
-    dateField(
+    // Created is an Active column, so its filter is Active only.
+    ...(archiveView
+      ? []
+      : [
+          dateFilter(
+            'createdDate',
+            'Created',
+            created,
+            setCreated,
+            PAST_DATE_PRESETS,
+            (d) => utcDay(d.createdDate),
+          ),
+        ]),
+    dateFilter(
       'expirationDate',
-      'Expires',
-      expiresFrom,
-      expiresTo,
-      (from, to) => {
-        setExpiresFrom(from);
-        setExpiresTo(to);
-      },
+      'Expiration',
+      expires,
+      setExpires,
+      FUTURE_DATE_PRESETS,
+      (d) => utcDay(d.expirationDate),
+      CalendarClock,
     ),
-    dateField(
+    dateFilter(
       'purchaseDate',
       'Purchased',
-      purchasedFrom,
-      purchasedTo,
-      (from, to) => {
-        setPurchasedFrom(from);
-        setPurchasedTo(to);
-      },
+      purchased,
+      setPurchased,
+      PAST_DATE_PRESETS,
+      (d) => purchaseOf(d)?.purchaseDate,
     ),
     ...(archiveView
       ? [
-          dateField('saleDate', 'Sold', soldFrom, soldTo, (from, to) => {
-            setSoldFrom(from);
-            setSoldTo(to);
-          }),
+          dateFilter(
+            'saleDate',
+            'Sold',
+            sold,
+            setSold,
+            PAST_DATE_PRESETS,
+            (d) => purchaseOf(d)?.saleDate,
+          ),
         ]
       : []),
   ];
 
-  // Each view remembers its own columns on this Mac. A Purchased filter on
-  // Active still shows that column after Created until the picker turns it on.
-  const columnPrefs = usePreferences((s) => s.columns);
-  const setPreferences = usePreferences((s) => s.setPreferences);
+  // Each tab remembers its own columns on this device. A date filter keeps
+  // its column on screen, where the layout puts it, while it narrows.
   const columnView = archiveView ? 'archive' : 'active';
-  const purchasedFilterOn =
-    calendarDay(purchasedFrom) !== null || calendarDay(purchasedTo) !== null;
-  const visibleKeys = useMemo(
-    () =>
-      visibleColumnKeys(columnPrefs[columnView], columnView, {
-        purchasedFilter: purchasedFilterOn,
-      }),
-    [columnPrefs, columnView, purchasedFilterOn],
+  const layoutColumnsForView = LAYOUT_COLUMNS[columnView];
+  const { layout: columnLayout, setLayout: setColumnLayout } = useColumnLayout(
+    `domains.${columnView}`,
+    layoutColumnsForView,
   );
+  const filteredDateColumns = useMemo(
+    () =>
+      (
+        [
+          [created, 'createdDate'],
+          [expires, 'expirationDate'],
+          [purchased, 'purchaseDate'],
+          [sold, 'saleDate'],
+        ] as const
+      )
+        .filter(([range]) => isDateRangeSet(range))
+        .map(([, key]) => key),
+    [created, expires, purchased, sold],
+  );
+  const shownColumnKeys = applyColumnLayout(
+    layoutColumnsForView,
+    columnLayout,
+    filteredDateColumns,
+  )
+    .map((c) => c.key)
+    .join(' ');
+
+  // A sort whose column has gone (hidden in the picker, a filter cleared, or
+  // a tab switch) goes back to the Settings default, or Domain
+  // when that column isn't shown either, so a header always shows the sort.
+  useEffect(() => {
+    const shownKeys = new Set(shownColumnKeys.split(' '));
+    if (shownKeys.has(sortKey)) return;
+    const fallback = usePreferences.getState();
+    const useDefault = shownKeys.has(fallback.sortKey);
+    setSortKey(useDefault ? fallback.sortKey : 'domainName');
+    setSortDir(useDefault ? fallback.sortDir : 'asc');
+  }, [shownColumnKeys, sortKey]);
 
   function setListView(next: 'owned' | 'archive') {
     setFolder([]);
     setPriceMin('');
     setPriceMax('');
+    // Created is Active only and Sold is Archive only; neither waits,
+    // hidden, to come back.
+    setCreated(NO_DATE_RANGE);
+    setSold(NO_DATE_RANGE);
     setPage(0);
     const nextParams = new URLSearchParams(params);
     if (next === 'archive') nextParams.set('view', 'archive');
@@ -1473,12 +1537,6 @@ export default function Domains() {
         )
       )
         return false;
-      // Expiration: keep a domain matching ANY selected window ("Expired" =
-      // past-due; a numeric window = within that many upcoming days).
-      if (expiry.length > 0) {
-        const days = daysUntil(d.expirationDate);
-        if (!expiry.some((o) => matchesExpiryOption(o, days))) return false;
-      }
       // Nameservers: keep a domain in ANY selected nameserver group.
       if (ns.length > 0) {
         const keys = nsKeysByDomain.get(domainKey(d));
@@ -1492,13 +1550,11 @@ export default function Domains() {
       // Date bounds are inclusive calendar days. A blank date on the row
       // stays out. Sold is an Archive column, so that bound waits there.
       const record = purchases[toAscii(d.domainName)];
-      if (!matchesDateRange(utcDay(d.createdDate), createdFrom, createdTo))
+      if (!archiveView && !matchesDateRange(utcDay(d.createdDate), created))
         return false;
-      if (!matchesDateRange(utcDay(d.expirationDate), expiresFrom, expiresTo))
-        return false;
-      if (!matchesDateRange(record?.purchaseDate, purchasedFrom, purchasedTo))
-        return false;
-      if (archiveView && !matchesDateRange(record?.saleDate, soldFrom, soldTo))
+      if (!matchesDateRange(utcDay(d.expirationDate), expires)) return false;
+      if (!matchesDateRange(record?.purchaseDate, purchased)) return false;
+      if (archiveView && !matchesDateRange(record?.saleDate, sold))
         return false;
       // Owned vs Archive comes from the event log. In Archive the filter is
       // the status; in Owned it's the folder (a real folder, Hidden, or None),
@@ -1554,7 +1610,6 @@ export default function Domains() {
     search,
     tld,
     registrar,
-    expiry,
     ns,
     nsKeysByDomain,
     folder,
@@ -1565,14 +1620,10 @@ export default function Domains() {
     priceMax,
     listPrices,
     purchases,
-    createdFrom,
-    createdTo,
-    expiresFrom,
-    expiresTo,
-    purchasedFrom,
-    purchasedTo,
-    soldFrom,
-    soldTo,
+    created,
+    expires,
+    purchased,
+    sold,
     archiveView,
     archiveLabelOf,
     sortKey,
@@ -1808,11 +1859,11 @@ export default function Domains() {
       return <CellSkeleton align={col.align} />;
     return col.render(d, portfolioRegistrarLabels);
   };
-  const dataColumns: DataColumn<Domain>[] = [];
-  for (const key of visibleKeys) {
-    if (key === FOLDER) {
-      dataColumns.push({
-        key: FOLDER,
+  // Every column this tab can show, in default order; the saved layout picks
+  // and orders them.
+  const dataColumn = (key: string): Omit<DataColumn<Domain>, 'key'> => {
+    if (key === FOLDER)
+      return {
         label: archiveView ? 'Status' : 'Folder',
         headClassName: 'pl-3 compact:pl-2',
         cellClassName: 'p-0!',
@@ -1826,12 +1877,9 @@ export default function Domains() {
               onAssign={(folderId) => applyFolders([d], folderId)}
             />
           ),
-      });
-      continue;
-    }
-    if (key === RENEWAL) {
-      dataColumns.push({
-        key: RENEWAL,
+      };
+    if (key === RENEWAL)
+      return {
         label: 'Renewal',
         align: 'right',
         headClassName: 'w-0',
@@ -1839,22 +1887,22 @@ export default function Domains() {
         cell: (d) => (
           <RenewalCell info={pricing[domainKey(d)]} loading={pricingLoading} />
         ),
-      });
-      continue;
-    }
-    const col = columnByKey.get(key);
-    if (!col) continue;
-    dataColumns.push({
-      key: col.key,
+      };
+    const col = columnByKey.get(key)!;
+    return {
       label: col.label,
       align: col.align,
       compact: col.compact,
       hideOnMobile: col.hideOnMobile,
-      headClassName: col.key === 'autoRenew' ? 'pl-[8px]' : undefined,
-      cellClassName: col.key === 'autoRenew' ? 'pl-[6px]' : undefined,
+      headClassName: key === 'autoRenew' ? 'pl-[8px]' : undefined,
+      cellClassName: key === 'autoRenew' ? 'pl-[6px]' : undefined,
       cell: (d) => renderCell(col, d),
-    });
-  }
+    };
+  };
+  const dataColumns: DataColumn<Domain>[] = layoutColumnsForView.map((c) => ({
+    ...c,
+    ...dataColumn(c.key),
+  }));
 
   // Sync failures, in red under the Sync button: the whole sync, or which
   // accounts failed (their errors are on their cards in Settings → Registrars).
@@ -1963,14 +2011,10 @@ export default function Domains() {
           )}
           <div className="order-last ml-auto">
             <ColumnPicker
-              view={columnView}
-              layout={columnPrefs[columnView]}
-              purchasedFilter={purchasedFilterOn}
-              onLayout={(next) =>
-                setPreferences({
-                  columns: { ...columnPrefs, [columnView]: next },
-                })
-              }
+              columns={dataColumns}
+              layout={columnLayout}
+              onChange={setColumnLayout}
+              forceVisible={filteredDateColumns}
             />
           </div>
         </FilterToolbar>
@@ -2001,6 +2045,8 @@ export default function Domains() {
         className="mt-[13px]"
         rows={filtered}
         columns={dataColumns}
+        layout={columnLayout}
+        forceVisible={filteredDateColumns}
         rowKey={domainKey}
         sort={{ key: sortKey, dir: sortDir }}
         onSort={toggleSort}

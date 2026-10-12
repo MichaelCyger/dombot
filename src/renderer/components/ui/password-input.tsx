@@ -41,11 +41,7 @@ function PasswordInput({
           onClick={() => setVisible((v) => !v)}
           className="absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground/70 transition-colors hover:text-foreground"
         >
-          {visible ? (
-            <EyeOff className="size-4" />
-          ) : (
-            <Eye className="size-4" />
-          )}
+          {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
         </button>
       )}
     </div>

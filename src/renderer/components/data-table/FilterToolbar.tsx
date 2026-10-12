@@ -101,7 +101,7 @@ export function FilterToolbar({
         value={search}
         onChange={onSearch}
         placeholder={searchPlaceholder}
-        className="flex-[0_1_216px]"
+        className="flex-[0_1_198px]"
       />
       <FilterBar id={id} fields={fields} presets={presets} variant="flat" />
       {children}

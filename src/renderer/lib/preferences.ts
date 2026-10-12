@@ -1,9 +1,5 @@
 import { create } from 'zustand';
-import {
-  defaultColumnLayout,
-  normalizeColumnLayout,
-  type ColumnLayout,
-} from './column-layout';
+import type { ColumnLayout } from '../components/data-table/column-layout';
 
 /**
  * Per-device display preferences (Settings → General), persisted in
@@ -20,8 +16,9 @@ export interface Preferences {
   /** Domains table density. `compact` is the phone layout's tighter spacing
    * and smaller type; phones always use it regardless. */
   density: 'normal' | 'compact';
-  /** Which Domains columns show, and in what order, per view. */
-  columns: { active: ColumnLayout; archive: ColumnLayout };
+  /** Each table's chosen columns and their order, by table id (e.g.
+   * `domains.active`). Fitted to the table's columns when it is drawn. */
+  columnLayouts: Record<string, ColumnLayout>;
 }
 
 export const PAGE_SIZES = [25, 50, 100, 250];
@@ -45,10 +42,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sortKey: 'domainName',
   sortDir: 'asc',
   density: 'normal',
-  columns: {
-    active: defaultColumnLayout('active'),
-    archive: defaultColumnLayout('archive'),
-  },
+  columnLayouts: {},
 };
 
 const STORAGE_KEY = 'dombot-preferences';
@@ -75,21 +69,23 @@ export function parsePreferences(raw: string | null): Preferences {
       v.sortDir === 'asc' || v.sortDir === 'desc' ? v.sortDir : d.sortDir,
     density:
       v.density === 'normal' || v.density === 'compact' ? v.density : d.density,
-    columns: {
-      active: normalizeColumnLayout(
-        v.columns && typeof v.columns === 'object'
-          ? (v.columns as { active?: unknown }).active
-          : undefined,
-        'active',
-      ),
-      archive: normalizeColumnLayout(
-        v.columns && typeof v.columns === 'object'
-          ? (v.columns as { archive?: unknown }).archive
-          : undefined,
-        'archive',
-      ),
-    },
+    columnLayouts: parseColumnLayouts(v.columnLayouts),
   };
+}
+
+/** Keeps entries shaped like a layout. Which keys are valid is up to each
+ * table, which fits its entry to its columns when it draws. */
+function parseColumnLayouts(raw: unknown): Record<string, ColumnLayout> {
+  const out: Record<string, ColumnLayout> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const strings = (a: unknown): a is string[] =>
+    Array.isArray(a) && a.every((k) => typeof k === 'string');
+  for (const [id, layout] of Object.entries(raw)) {
+    const l = layout as Partial<ColumnLayout> | null;
+    if (l && strings(l.order) && strings(l.hidden))
+      out[id] = { order: l.order, hidden: l.hidden };
+  }
+  return out;
 }
 
 function readStored(): Preferences {
@@ -109,11 +105,17 @@ export const usePreferences = create<PreferencesState>((set, get) => ({
   ...readStored(),
   setPreferences: (patch) => {
     set(patch);
-    const { pageSize, sortKey, sortDir, density, columns } = get();
+    const { pageSize, sortKey, sortDir, density, columnLayouts } = get();
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ pageSize, sortKey, sortDir, density, columns }),
+        JSON.stringify({
+          pageSize,
+          sortKey,
+          sortDir,
+          density,
+          columnLayouts,
+        }),
       );
     } catch {
       // Persisting is best-effort; the in-memory state still updates.

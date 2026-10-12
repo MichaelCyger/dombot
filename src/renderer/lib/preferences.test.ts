@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { moveColumnTo } from './column-layout';
 import { DEFAULT_PREFERENCES, parsePreferences } from './preferences';
 
 describe('parsePreferences', () => {
@@ -18,7 +17,7 @@ describe('parsePreferences', () => {
     };
     expect(parsePreferences(JSON.stringify(stored))).toEqual({
       ...stored,
-      columns: DEFAULT_PREFERENCES.columns,
+      columnLayouts: {},
     });
   });
 
@@ -29,34 +28,28 @@ describe('parsePreferences', () => {
       sortKey: 'renewal',
       sortDir: DEFAULT_PREFERENCES.sortDir,
       density: DEFAULT_PREFERENCES.density,
-      columns: DEFAULT_PREFERENCES.columns,
+      columnLayouts: {},
     });
   });
 
-  it('keeps a saved column layout and drops a key it does not know', () => {
-    const active = {
-      ...DEFAULT_PREFERENCES.columns.active,
-      order: moveColumnTo(
-        DEFAULT_PREFERENCES.columns.active.order,
-        'nameservers',
-        1,
-      ),
-      hidden: ['purchaseDate', 'purchaseAmount', 'privacy', 'gone'],
+  it('keeps column layouts shaped like one and drops the rest', () => {
+    const layout = {
+      order: ['domainName', 'registrar'],
+      hidden: ['registrar'],
     };
     const stored = {
-      pageSize: 50,
-      sortKey: 'domainName',
-      sortDir: 'asc',
-      density: 'normal',
-      columns: { active, archive: DEFAULT_PREFERENCES.columns.archive },
+      columnLayouts: {
+        'domains.active': layout,
+        'domains.archive': { order: 'nope', hidden: [] },
+        other: { order: [1], hidden: [] },
+      },
     };
-    const parsed = parsePreferences(JSON.stringify(stored));
-    expect(parsed.columns.active.order[1]).toBe('nameservers');
-    expect(parsed.columns.active.hidden).toEqual([
-      'purchaseDate',
-      'purchaseAmount',
-      'privacy',
-    ]);
-    expect(parsed.columns.archive).toEqual(DEFAULT_PREFERENCES.columns.archive);
+    expect(parsePreferences(JSON.stringify(stored)).columnLayouts).toEqual({
+      'domains.active': layout,
+    });
+    expect(
+      parsePreferences(JSON.stringify({ columnLayouts: [layout] }))
+        .columnLayouts,
+    ).toEqual({});
   });
 });
