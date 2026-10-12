@@ -257,7 +257,7 @@ export function ColumnPicker({
                     tabIndex={-1}
                     aria-hidden
                     onPointerDown={(event) => onPointerDown(event, key)}
-                    className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing dark:text-muted-foreground/60"
+                    className="-mx-px cursor-grab touch-none text-muted-foreground active:cursor-grabbing dark:text-muted-foreground/60"
                   >
                     <GripVertical className="size-4" />
                   </button>
@@ -297,7 +297,7 @@ export function ColumnPicker({
         </div>
         <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
           <span id={hintId} className="text-xs text-muted-foreground">
-            Drag or Alt+↑/↓ to move
+            Drag to reorder columns
           </span>
           <button
             type="button"

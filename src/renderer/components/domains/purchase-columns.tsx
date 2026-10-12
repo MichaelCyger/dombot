@@ -71,7 +71,7 @@ export function purchaseDateColumn(
 ): PurchaseColumn {
   return {
     key: 'purchaseDate',
-    label: 'Purchased',
+    label: 'Purchase date',
     hideOnMobile: true,
     render: (d) => {
       const date = recordOf(purchases, d)?.purchaseDate;
@@ -107,7 +107,7 @@ export function purchaseAmountColumn(
 ): PurchaseColumn {
   return {
     key: 'purchaseAmount',
-    label: 'Purchased for',
+    label: 'Purchase price',
     align: 'right',
     render: (d) => {
       const record = recordOf(purchases, d);
