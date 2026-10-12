@@ -218,14 +218,13 @@ export function ColumnPicker({
         className="flex max-h-[min(32rem,70vh)] w-64 flex-col p-0"
       >
         <PopoverArrow />
-        <p className="px-3 pt-3 pb-2 text-sm font-medium">Columns</p>
         <div
           ref={listRef}
           role="list"
           aria-label="Columns"
           aria-describedby={hintId}
           className={cn(
-            'min-h-0 flex-1 overflow-y-auto px-1 pb-1',
+            'min-h-0 flex-1 overflow-y-auto px-1 py-1',
             dragKey && 'select-none',
           )}
         >
