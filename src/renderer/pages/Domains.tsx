@@ -41,6 +41,7 @@ import {
 } from '../../shared/ownership';
 import { isOpenAlert, resolvedIds } from '../../shared/sync-diff';
 import { ARCHIVE_LABEL, accountName } from '../lib/domain-history';
+import { domainLifecycle, type LifecycleTone } from '../lib/domain-lifecycle';
 import {
   ImportedRegistrarIcon,
   RegistrarLogo,
@@ -412,8 +413,6 @@ function FolderMenuContent({
   );
 }
 
-type LifecycleTone = 'redemption' | 'expired' | 'grace' | 'hold';
-
 /**
  * A solid pill per lifecycle state. The post-expiry states walk the cool side
  * of the wheel with severity — grace (still renewable at the normal price) is
@@ -424,32 +423,11 @@ type LifecycleTone = 'redemption' | 'expired' | 'grace' | 'hold';
  */
 const LIFECYCLE_TONE: Record<LifecycleTone, string> = {
   redemption: 'bg-purple-950 text-purple-100',
+  deleted: 'bg-purple-950 text-purple-100',
   expired: 'bg-fuchsia-700 text-white',
   grace: 'bg-pink-500 text-white',
   hold: 'bg-red-800 text-white',
 };
-
-/**
- * Detects a lifecycle problem from the normalized `status` string. There's no
- * dedicated flag across registrars, so we match the substrings each surfaces:
- * Gandi emits raw EPP codes, GoDaddy/Cloudflare/Spaceship lifecycle enums, and
- * Namecheap/Namesilo an "expired" once detail is fetched. Returns a short label
- * + tone, or null for healthy domains.
- */
-function domainLifecycle(
-  status: string,
-): { label: string; tone: LifecycleTone } | null {
-  const s = status.toLowerCase();
-  if (/redemption|pending_?delete|recoverable|restorable/.test(s)) {
-    return { label: 'Redemption', tone: 'redemption' };
-  }
-  if (/expired/.test(s)) return { label: 'Expired', tone: 'expired' };
-  if (/grace|autorenewperiod|renewperiod/.test(s)) {
-    return { label: 'Grace', tone: 'grace' };
-  }
-  if (/hold/.test(s)) return { label: 'Hold', tone: 'hold' };
-  return null;
-}
 
 /** A distinctly-colored pill per lifecycle state; nothing when healthy. */
 function LifecycleBadge({ status }: { status: string }) {
@@ -461,7 +439,7 @@ function LifecycleBadge({ status }: { status: string }) {
         'border-transparent px-1.5 py-0 text-[11px] compact:px-1 compact:text-[10px]',
         LIFECYCLE_TONE[flag.tone],
       )}
-      title={`Registry status: ${status}`}
+      title={flag.title ?? `Registry status: ${status}`}
     >
       {flag.label}
     </Badge>
